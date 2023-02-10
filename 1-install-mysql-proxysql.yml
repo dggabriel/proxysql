@@ -10,7 +10,6 @@
        - python3-mysqldb
        - mysql-server
        - mysql-client
-       #- proxysql
       state: latest
       update_cache: yes
 
@@ -22,6 +21,28 @@
       name: root
       password: dbpass$%^
       check_implicit_admin: true
+
+  - name: Create myadmin user
+    mysql_user:
+     name: myadmin
+     password: dbpass$%^
+     login_user: root
+     login_password: dbpass$%^
+     priv: "*.*:ALL,GRANT"
+     state: present
+
+  - name: Copy mysqld.cnf
+    template:
+     src: mysqld.cnf
+     dest: /etc/mysql/mysql.conf.d/mysqld.cnf
+     mode: 0644
+     owner: root
+     group: root
+
+  - name: Restart mysql
+    service:
+     name: mysql
+     state: restarted
 
   - name: Add and install proxysql repository
     shell: |

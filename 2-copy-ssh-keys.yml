@@ -1,0 +1,48 @@
+---
+- hosts: databases
+  become: true
+  become_user: root
+
+  vars:
+    ssh_key_filename: id_rsa_proxysql
+  tasks:
+
+  - name: generate SSH key "{{ssh_key_filename}}"
+    openssh_keypair:
+      path: "~/.ssh/{{ssh_key_filename}}"
+      type: rsa
+      size: 4096
+      state: present
+      force: no
+    become_user: root
+    become: true
+
+
+  - name: duplicate id_rsa_proxysql to id_rsa
+    shell: 'cp /root/.ssh/id_rsa_proxysql /root/.ssh/id_rsa'
+    become_user: root
+    ignore_errors: yes
+
+  - name: set id_rsa file permission
+    shell: 'chmod  600 /root/.ssh/id_rsa'
+    become_user: root
+
+  - name: fetch all public ssh keys
+    shell: cat ~/.ssh/id_rsa_proxysql.pub
+    register: ssh_keys
+    tags:
+      - ssh
+
+  - name: check keys
+    debug: msg="{{ ssh_keys.stdout }}"
+    tags:
+      - ssh
+
+  - name: deploy keys on all servers
+    authorized_key: user=root key="{{ item[0] }}"
+    delegate_to: "{{ item[1] }}"
+    with_nested:
+      - "{{ ssh_keys.stdout }}"
+      - "{{groups['databases']}}"
+    tags:
+      - ssh
