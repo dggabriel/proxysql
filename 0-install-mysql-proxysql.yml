@@ -1,0 +1,71 @@
+---
+- hosts: primary_database
+  become: true
+  become_user: root
+  tasks:
+
+  - name: Install mysql-server
+    apt:
+      name:
+       - python3-mysqldb
+       - mysql-server
+       - mysql-client
+      state: latest
+      update_cache: yes
+
+  - name: Manage MySQL root password
+    no_log: true
+    mysql_user:
+      login_user: root
+      login_password: dbpass$%^
+      name: root
+      password: dbpass$%^
+      check_implicit_admin: true
+
+  - name: Create myadmin user
+    mysql_user:
+     name: myadmin
+     password: dbpass$%^
+     login_user: root
+     login_password: dbpass$%^
+     priv: "*.*:ALL,GRANT"
+     state: present
+
+  - name: Copy mysqld.cnf
+    template:
+     src:  primary/mysqld.cnf
+     dest: /etc/mysql/mysql.conf.d/mysqld.cnf
+     mode: 0644
+     owner: root
+     group: root
+
+  - name: Restart mysql
+    service:
+     name: mysql
+     state: restarted
+
+  - name: Add and install proxysql repository
+    shell: |
+     apt-get install -y --no-install-recommends lsb-release wget apt-transport-https ca-certificates gnupg
+     wget -O - 'https://repo.proxysql.com/ProxySQL/proxysql-2.4.x/repo_pub_key' | apt-key add - 
+     echo deb https://repo.proxysql.com/ProxySQL/proxysql-2.4.x/$(lsb_release -sc)/ ./ | tee /etc/apt/sources.list.d/proxysql.list
+     apt-get update
+     apt-get install proxysql
+    args:
+     warn: no
+
+  - name: Copy NodeUtil.pm
+    template:
+     src:  primary/NodeUtil.pm
+     dest: /usr/share/perl5/MHA/NodeUtil.pm
+     mode: 0644
+     owner: root
+     group: root
+
+  - name: Start proxysql
+    service:
+     name: proxysql
+     state: started
+
+
+  

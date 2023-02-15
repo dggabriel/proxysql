@@ -14,6 +14,7 @@
 #
 # * Basic Settings
 #
+server-id = 2
 user            = mysql
 # pid-file      = /var/run/mysqld/mysqld.pid
 # socket        = /var/run/mysqld/mysqld.sock
@@ -27,7 +28,7 @@ user            = mysql
 #
 # Instead of skip-networking the default is now to listen only on
 # localhost which is more compatible and is not less secure.
-bind-address            = 0.0.0.0
+#bind-address            = 0.0.0.0
 mysqlx-bind-address     = 127.0.0.1
 #
 # * Fine Tuning
