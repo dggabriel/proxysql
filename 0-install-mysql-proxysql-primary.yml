@@ -1,0 +1,152 @@
+---
+- hosts: primary_database
+  become: true
+  become_user: root
+  tasks:
+
+  - name: Install mysql-server
+    apt:
+      name:
+       - python3-mysqldb
+       - mysql-server
+       - mysql-client
+      state: latest
+      update_cache: yes
+
+  - name: Manage MySQL root password
+    no_log: true
+    mysql_user:
+      login_user: root
+      login_password: dbpass$%^
+      name: root
+      password: dbpass$%^
+      check_implicit_admin: true
+
+  - name: Create myadmin user
+    mysql_user:
+     name: myadmin
+     password: dbpass$%^
+     login_user: root
+     login_password: dbpass$%^
+     priv: "*.*:ALL,GRANT"
+     state: present
+
+  - name: Copy mysqld.cnf
+    template:
+     src:  primary/mysqld.cnf
+     dest: /etc/mysql/mysql.conf.d/mysqld.cnf
+     mode: 0644
+     owner: root
+     group: root
+
+  - name: Restart mysql
+    service:
+     name: mysql
+     state: restarted
+
+  - name: Add and install proxysql repository
+    shell: |
+     apt-get install -y --no-install-recommends lsb-release wget apt-transport-https ca-certificates gnupg
+     wget -O - 'https://repo.proxysql.com/ProxySQL/proxysql-2.4.x/repo_pub_key' | apt-key add - 
+     echo deb https://repo.proxysql.com/ProxySQL/proxysql-2.4.x/$(lsb_release -sc)/ ./ | tee /etc/apt/sources.list.d/proxysql.list
+     apt-get update
+     apt-get install proxysql
+    args:
+     warn: no
+
+  - name: Start proxysql
+    service:
+     name: proxysql
+     state: started
+
+  - name: add server nodes
+    shell: |
+     mysql -u admin -padmin -h 127.0.0.1 -P 6032 --prompt='proxysql> ' -e 
+     INSERT INTO mysql_servers (hostgroup_id, hostname) VALUES (20, '192.168.1.152');
+     INSERT INTO mysql_servers (hostgroup_id, hostname) VALUES (20, '192.168.1.153');
+     INSERT INTO mysql_replication_hostgroups (writer_hostgroup, reader_hostgroup, comment) VALUES (10, 20, 'Master / Slave App 1');
+     LOAD MYSQL SERVERS TO RUNTIME; SAVE MYSQL SERVERS TO DISK;
+    args:
+     warn: no
+
+  - name: set global variables for monitor
+    shell: |
+     mysql -u admin -padmin -h 127.0.0.1 -P 6032 --prompt='proxysql> ' -e
+     UPDATE global_variables SET variable_value='monitor' WHERE variable_name='mysql-monitor_username';
+     UPDATE global_variables SET variable_value='dbpass$%^' WHERE variable_name='mysql-monitor_password';
+     LOAD MYSQL VARIABLES TO RUNTIME; SAVE MYSQL VARIABLES TO DISK;
+    args:
+     warn: no
+
+  - name: create user monitor (mysql)
+    shell: |
+     mysql -u root -pdbpass$%^ -e
+     CREATE USER 'monitor'@'192.168.1.152' IDENTIFIED WITH mysql_native_password BY 'dbpass$%^';
+     GRANT ALL PRIVILEGES ON *.* TO 'monitor'@'192.168.1.152';
+    args:
+     warn: no
+
+  - name: create user appuser (proxysql)
+    shell: |
+     mysql -u admin -padmin -h 127.0.0.1 -P 6032 --prompt='proxysql> ' -e
+     INSERT INTO mysql_users (username, password, default_hostgroup) VALUES ('appuser', 'appuser$%^', 10);
+     LOAD MYSQL USERS TO RUNTIME; SAVE MYSQL USERS TO DISK;
+     SAVE MYSQL USERS FROM RUNTIME; SAVE MYSQL USERS TO DISK;
+    args:
+     warn: no
+
+  - name: create user appuser (mysql)
+    shell: |
+     mysql -u root -pdbpass$%^ -e
+     CREATE USER 'appuser'@'%' IDENTIFIED WITH mysql_native_password BY 'appuser$%^';
+     GRANT ALL PRIVILEGES ON *.* TO 'appuser'@'%';
+    args:
+     warn: no
+
+  - name: insert mysql_rules (proxysql)
+    shell: |
+     mysql -u admin -padmin -h 127.0.0.1 -P 6032 --prompt='proxysql> ' -e
+     INSERT INTO mysql_query_rules (rule_id,username,destination_hostgroup,active,match_digest,apply) VALUES(1,'appuser',10,1,'^SELECT.*FOR UPDATE',1);
+     INSERT INTO mysql_query_rules (rule_id,username,destination_hostgroup,active,match_digest,apply) VALUES(2,'appuser',20,1,'^SELECT ',1);
+     LOAD MYSQL QUERY RULES TO RUNTIME; SAVE MYSQL QUERY RULES TO DISK;
+    args:
+     warn: no
+
+  - name: Add and install mha node and manager repository
+    shell: |
+     sudo curl -L -O https://github.com/yoshinorim/mha4mysql-node/releases/download/v0.58/mha4mysql-node_0.58-0_all.deb
+     sudo apt-get install libdbd-mysql-perl
+     sudo dpkg -i mha4mysql-node_0.58-0_all.deb
+     sudo curl -L -O https://github.com/yoshinorim/mha4mysql-manager/releases/download/v0.58/mha4mysql-manager_0.58-0_all.deb
+     sudo apt-get install libdbd-mysql-perl
+     sudo apt-get install libconfig-tiny-perl
+     sudo apt-get install liblog-dispatch-perl
+     sudo apt-get install libparallel-forkmanager-perl
+     sudo dpkg -i mha4mysql-manager_0.58-0_all.deb
+    args:
+     warn: no
+
+  - name: Create mha directory
+    shell: |
+     sudo mkdir -p /etc/mha/ /var/log/mha/
+    args:
+     warn: no
+
+  - name: Copy cluster.conf
+    template:
+     src:  primary/cluster.conf
+     dest: /etc/mha/cluster.conf
+     mode: 0644
+     owner: root
+     group: root
+
+  - name: Copy NodeUtil.pm
+    template:
+     src:  primary/NodeUtil.pm
+     dest: /usr/share/perl5/MHA/NodeUtil.pm
+     mode: 0644
+     owner: root
+     group: root
+
+
+  

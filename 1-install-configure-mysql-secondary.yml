@@ -1,5 +1,5 @@
 ---
-- hosts: primary_database
+- hosts: secondary_database
   become: true
   become_user: root
   tasks:
@@ -33,7 +33,7 @@
 
   - name: Copy mysqld.cnf
     template:
-     src: mysqld.cnf
+     src:  secondary/mysqld.cnf
      dest: /etc/mysql/mysql.conf.d/mysqld.cnf
      mode: 0644
      owner: root
@@ -44,20 +44,18 @@
      name: mysql
      state: restarted
 
-  - name: Add and install proxysql repository
+  - name: create user monitor (mysql)
     shell: |
-     apt-get install -y --no-install-recommends lsb-release wget apt-transport-https ca-certificates gnupg
-     wget -O - 'https://repo.proxysql.com/ProxySQL/proxysql-2.4.x/repo_pub_key' | apt-key add - 
-     echo deb https://repo.proxysql.com/ProxySQL/proxysql-2.4.x/$(lsb_release -sc)/ ./ | tee /etc/apt/sources.list.d/proxysql.list
-     apt-get update
-     apt-get install proxysql
+     mysql -u root -pdbpass$%^ -e
+     CREATE USER 'monitor'@'192.168.1.153' IDENTIFIED WITH mysql_native_password BY 'dbpass$%^';
+     GRANT ALL PRIVILEGES ON *.* TO 'monitor'@'192.168.1.153';
     args:
      warn: no
 
-  - name: Start proxysql
-    service:
-     name: proxysql
-     state: started
-
-
-  
+  - name: create user appuser (mysql)
+    shell: |
+     mysql -u root -pdbpass$%^ -e
+     CREATE USER 'appuser'@'%' IDENTIFIED WITH mysql_native_password BY 'appuser$%^';
+     GRANT ALL PRIVILEGES ON *.* TO 'appuser'@'%';
+    args:
+     warn: no
